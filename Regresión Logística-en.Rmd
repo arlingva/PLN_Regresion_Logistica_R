@@ -211,7 +211,9 @@ print("Tweet procesado:")
 process_tweet(tweet.test)
 ```
 
-### Construcción de diccionario y frecuencias
+#### Construcción de diccionario y frecuencias
+
+El procedimiento para crear un diccionario consite en aplicar la función `process_tweet` a un conjunto de tweets, crear una lista única de palabras y calcular la frecuencia con la que se clasifican en negativos y positivos.
 
 ```{r}
 build_freqs <- function(X, y){
@@ -244,10 +246,13 @@ Se crea el diccionario con el conjunto de datos de entrenamiento.
 
 ```{r, eval = FALSE}
 freqs <- build_freqs(train.df, train.y)
+```
+
+```{r, eval = FALSE, echo = FALSE}
 freqs %>% write.csv("data/freqs.csv")
 ```
 
-```{r}
+```{r, echo = FALSE}
 freqs <- read.csv("data/freqs.csv")
 ```
 
@@ -259,14 +264,21 @@ freqs <- read.csv("data/freqs.csv")
 sigmoid <- function(z){h = 1/ (1 + exp(-z))}
 ```
 
+Cuando el modelo predice de manera incorrecta el valor de la función `loss` es cercano a `9.2`.
+
+Por ejemplo, si predice cercano a `1` y el valor real es 0:
 
 ```{r}
 -1 * sum(0 * log(0.9999) + (1-0) * log(1-0.9999))
 ```
 
+O bien, cuando predice cercano a cero y el valor real es 1:
+
 ```{r}
 -1 * sum(1 * log(0.0001) + (1-1) * log(1-0.0001))
 ```
+
+#### Función `loss`
 
 ```{r}
 loss <- function(y_hat, y){
@@ -274,6 +286,8 @@ loss <- function(y_hat, y){
   return(loss)
 }
 ```
+
+Gráfica de la función `loss` para $x \in (0, 1)$:
 
 ```{r}
 x <- seq(0.0001, 0.9999, length=100)
@@ -302,6 +316,8 @@ gradientDescent <- function(x, y, theta, alpha, num_iters){
 }
 ```
 
+Para probar la función descenso de gradiente se utilizaron los mismos valores que en el proyecto original. Se obtuvieron los mismos resultados.
+
 ```{r}
 tmp_X = matrix(
   c(1, 8.34044009e+02, 1.44064899e+03,
@@ -318,12 +334,19 @@ tmp_X = matrix(
 
 tmp_Y = c(1, 1, 0, 1, 1, 1, 0, 0, 0, 1)
 
-gradientDescent(tmp_X, tmp_Y, rep(0, 3), 1e-8, 700)
+paste("Costo después del entrenamiento:",
+      gradientDescent(tmp_X, tmp_Y, rep(0, 3), 1e-8, 700)[[1]]) %>%
+  print()
+
+print("Vector de pesos:")
+as.vector(gradientDescent(tmp_X, tmp_Y, rep(0, 3), 1e-8, 700)[[2]]) %>%
+  print()
 ```
 
 # Part 2: Extracting the features
 
-Función Extract Features
+#### Función Extract Features
+
 ```{r}
 extract_features <- function(tweet, dict){
   word_l = process_tweet(tweet)
@@ -339,26 +362,31 @@ extract_features <- function(tweet, dict){
 }
 ```
 
+Prueba la función:
+
 ```{r}
 tweet.test <- "#FollowFriday @France_Inte @PKuchly57 @Milipol_Paris for being top engaged members in my community this week :)"
 extract_features(tweet.test, freqs)
 ```
+
+Si bien los resultados no son idénticos debido a diferencias entre el stemming entre `R` y `python`, los resultados son semilares.
+
+Por ejemplo, en el tweet de prueba, la diferencia radica en una palabra: *communiti*; en `python` es *comun*.
 
 ```{r}
 freqs %>%
   filter(words %in% process_tweet(tweet.test))
 ```
 
-check for when the words are not in the freqs dictionary
+Ahora, se prueba la función con palabras que no están en el diccionario:
 
 ```{r}
 extract_features('blorb bleeeeb bloooob', freqs)
 ```
 
-# Part 3: Training Your Model
+# Part 3: Entrenando el modelo
 
 ```{r}
-# collect the features 'x' and stack them into a matrix 'X'
 X <- rep(0, 3*nrow(train.df)) %>%
   matrix(nrow = nrow(train.df))
 colnames(X) <- c("bias", "pos", "neg")
@@ -371,6 +399,7 @@ for (i in 1:nrow(train.df)){
 y = train.y %>% t() %>% as.vector()
 ```
 
+Se aplica la función gradiente:
 
 ```{r}
 # Apply gradient descent
@@ -411,7 +440,7 @@ tweet <- "I am learning :)"
 paste("Tweet: ", 
       tweet, 
       ". Predict: ", 
-      predict_tweet(tweet, freqs, stopwords, theta),
+      predict_tweet(tweet, freqs, theta),
       sep = "") %>%
   print()
 ```
