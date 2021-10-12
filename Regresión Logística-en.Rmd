@@ -14,9 +14,9 @@ library(readxl)
 library(tidyr)
 library(stringr)
 rm(list = ls())
-```
 
-## Análisis exploratorio de datos
+`%notin%` = function(x,y) !(x %in% y)
+```
 
 ## Lectura de datos y funciones
 
@@ -45,32 +45,39 @@ paste("Conjunto de entrenamiento:", length(train.df$X))
 paste("Conjunto de prueba:", length(test.df$X))
 ```
 
-```{r}
-`%notin%` = function(x,y) !(x %in% y)
-```
-
 ## Preparación de datos
 
-### Stopwords
+Selección de idioma para stopwords y stemming.
+
+```{r}
+language <- "en"
+```
 
 Se descarga el conjunto de stopwords, las opciones disponibles son `snowball`, `nltk` y `stopwords-iso`. Para este ejercicio se eligió `nltk`.
 
 ```{r}
 library(stopwords)
-language <- "en"
 stopwords <- stopwords(language, source = "nltk")
 length(stopwords)
 ```
 
-Stemming words
+Para realizar el stemming se utilizó la función `text_tokens`.
 
 ```{r}
 library(corpus)
 text <- "comuniti communiti love loving lovingly loved lover lovely love"
-text_tokens(text, stemmer = language) # english stemmer
+text_tokens(text, stemmer = language)
 ```
 
-### Emoticones
+Un inconveniente del stemming de `R` ante `python` es que la función `text_tokens` no reconoce emoticones y los separa caracter por caracter. Por ejemplo:
+
+```{r}
+text <- "Hi, world :)"
+text_tokens(text, stemmer = language)[[1]]
+```
+
+En el documento `emoticons.xlsx` se incluye un listado de emoticones descargados de Wikipedia, estos serán útiles en el proceso de tokenización.
+
 ```{r}
 emoticons <- read_excel("data/emoticons.xlsx") %>%
   pivot_longer(e1:e11) %>%
@@ -84,7 +91,117 @@ emoticons <-str_replace_all(emoticons,"‑", "-")
 
 
 ### Procesamiento de tweets
+
+En el proyecto original, la limpieza y tokenización se hacen en una función. Aquí, por el contrario, se realiza en dos partes.
+
+#### Limpieza de tweets.
+
 ```{r}
+library(textclean)
+clean_tweet <- function(tweet){
+  # Texto a minúsculas
+  tweet <- tolower(tweet) 
+  # Elimina stock market tickers like $GE
+  tweet <- str_replace_all(tweet,"\\$\\w*", "")  
+  # Estos guiones parecen iguales, pero no lo son
+  tweet <-str_replace_all(tweet,"‑", "-")
+  # Elimina RT
+  tweet <- str_replace_all(tweet,"^RT[\\S]+", "") 
+  # Elimina hipervículos
+  tweet <- str_replace_all(tweet,"http[\\S]*", "")
+  # Elimina @
+  tweet <- str_replace_all(tweet,"@[\\S]*", "") 
+  # Elimina Hashtag
+  tweet <- str_replace_all(tweet,"#", "") 
+  # Elimina signos de puntuación
+  # Descartado para este ejercicio porque elimina emoticones
+  #tweet <- str_replace_all(tweet,"[[:punct:]]", " ") 
+  # Elimina números
+  #tweet <- str_replace_all(tweet,"[[:digit:]]", " ") 
+  # Elimina espacios en blanco múltiples
+  tweet <- str_replace_all(tweet,"[\\s]+", " ") 
+  tweet <- str_replace_all(tweet,"^[\\s]+", "")  
+  tweet <- str_replace_all(tweet,"[\\s]+^", "")  
+  return(tweet)
+}
+```
+
+Se prueba la función:
+
+```{r}
+tweet.test <- "#FollowFriday @France_Inte @PKuchly57 @Milipol_Paris for being top engaged members in my community this week :)"
+
+tweet.test %>% clean_tweet()
+```
+
+La tokenización se realiza en pasos:
+
+1. Tokenización
+2. Eliminación de stopwords
+3. Si el token no es emoticon, se eliminan signos de puntuación. 
+En este punto, es posible que el tweet tokenizado tenga longitud `0`. Es decir, que todos sus token hayan sido eliminados por ser stopwords o signos de puntuación; por ejemplo, emoticones no incluidos en el listado. Cuando esto ocurre en el tweet se guarda un `UNK`.
+4. Si el token no es emoticon, se aplica la función `text_tokens` (stemming). Se siguen las mismas precauciones para evitar tweets tokenizados de longitud `0`.
+
+```{r}
+tokenize_tweet <- function(tweet){
+  # Paso 1.
+  tweet <- str_split(tweet, " ")[[1]] 
+  # Paso 2.
+  tweet <- tweet[tweet %notin% stopwords] 
+
+  # Paso 3.  
+  for(i in 1:length(tweet)){
+    if(tweet[i] %notin% emoticons){
+      if(length(tweet[i])>0){
+        tweet[i] <- str_replace_all(tweet[i],"[[:punct:]]", "")
+      }else{tweet = "UNK"}
+    }else(tweet[i] = tweet[i])
+  }
+
+  tweet <- tweet[tweet != ""] 
+  if(length(tweet) == 0) {tweet = "UNK"}
+
+  # Paso 4.
+  for(i in 1:length(tweet)){
+    if(tweet[i] %notin% emoticons){
+      if(length(text_tokens(tweet[i], stemmer = language)[[1]])>0){
+        tweet[i] <- text_tokens(tweet[i], stemmer = language)[[1]]
+      }else{tweet = "UNK"}
+    }else{tweet[i] = tweet[i]}
+  }
+  
+  tweet <- tweet[str_length(tweet)>1] # Eliminación de palabras de longitut < 2
+  
+  return(tweet)
+}
+```
+
+Se prueba la función:
+
+```{r}
+tweet.test <- "#FollowFriday @France_Inte @PKuchly57 @Milipol_Paris for being top engaged members in my community this week :)"
+
+tweet.test %>% tokenize_tweet()
+```
+Finalmente, se unen los dos procesos en una función.
+
+```{r}
+process_tweet <- function(tweet){
+  tweet <- clean_tweet(tweet)
+  tweet <- tokenize_tweet(tweet)
+  return(tweet)
+}
+```
+
+Se prueba la función:
+
+```{r}
+tweet.test <- "#FollowFriday @France_Inte @PKuchly57 @Milipol_Paris for being top engaged members in my community this week :)"
+
+tweet.test %>% process_tweet()
+```
+
+```{r, eval=FALSE}
 library(textclean)
 process_tweet <- function(tweet){
   tweet <- tolower(tweet) # Texto a minúsculas
