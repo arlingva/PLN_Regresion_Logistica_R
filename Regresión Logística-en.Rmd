@@ -201,60 +201,6 @@ tweet.test <- "#FollowFriday @France_Inte @PKuchly57 @Milipol_Paris for being to
 tweet.test %>% process_tweet()
 ```
 
-```{r, eval=FALSE}
-library(textclean)
-process_tweet <- function(tweet){
-  tweet <- tolower(tweet) # Texto a minúsculas
-  tweet <- str_replace_all(tweet,"\\$\\w*", "") # Elimina stock market tickers like $GE
-  tweet <-str_replace_all(tweet,"‑", "-")
-  tweet <- str_replace_all(tweet,"^RT[\\S]+", "") # Elimina RT
-  tweet <- str_replace_all(tweet,"http[\\S]*", "") # Elimina hipervículos
-  tweet <- str_replace_all(tweet,"@[\\S]*", "") # Elimina @
-  tweet <- str_replace_all(tweet,"#", "") # Elimina #
-  #tweet <- str_replace_all(tweet,"[[:punct:]]", " ") # Elimina signos de puntuación
-  #tweet <- str_replace_all(tweet,"[[:digit:]]", " ") # Elimina números
-  tweet <- str_replace_all(tweet,"[\\s]+", " ") # Elimina espacios en blanco múltiples
-  tweet <- str_replace_all(tweet,"^[\\s]+", "")  
-  tweet <- str_replace_all(tweet,"[\\s]+^", "")  
-  tweet <- str_split(tweet, " ")[[1]] # Tokenización
-  tweet <- tweet[tweet %notin% stopwords] # Eliminación de stopwotds
-  #stemmer_tweet <- text_tokens(tweet, stemmer = language)
-  
-  for(i in 1:length(tweet)){
-    if(tweet[i] %notin% emoticons){
-      if(length(tweet[i])>0){
-        tweet[i] <- str_replace_all(tweet[i],"[[:punct:]]", "")
-      }else{tweet = "UNK"}
-    }else(tweet[i] = tweet[i])
-  }
-
-  tweet <- tweet[tweet != ""] 
-  
-  if(length(tweet) == 0) {tweet = "UNK"}
-
-  for(i in 1:length(tweet)){
-    if(tweet[i] %notin% emoticons){
-      if(length(text_tokens(tweet[i], stemmer = language)[[1]])>0){
-        tweet[i] <- text_tokens(tweet[i], stemmer = language)[[1]]
-      }else{tweet = "UNK"}
-    }else{tweet[i] = tweet[i]}
-  }
-  
-  tweet <- tweet[str_length(tweet)>1] # Eliminación de palabras de longitut < 2
-  
-  return(tweet)
-}
-```
-
-Prueba la función process_tweet
-
-```{r}
-tweet.test <- "#FollowFriday @France_Inte @PKuchly57 @Milipol_Paris for being top engaged members in my community this week :)"
-process_tweet(tweet.test)
-
-#text_tokens("community", stemmer = language)[[1]]
-```
-
 ```{r}
 #tweet.test <- test.df$X[2]
 #tweet.test <- train.df$X[4865]
