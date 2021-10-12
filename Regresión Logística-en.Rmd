@@ -1,0 +1,429 @@
+---
+title: "PLN Regresión Logística"
+author: "Arling"
+date: "10/7/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(dplyr)
+library(magrittr)
+library(readr)
+library(readxl)
+library(tidyr)
+library(stringr)
+rm(list = ls())
+```
+
+## Análisis exploratorio de datos
+
+## Lectura de datos y funciones
+
+```{r}
+train.neg <- read_csv("data/train_neg.csv", col_names = c("id", "X"), skip = 1) %>% select(X)
+train.pos <- read_csv("data/train_pos.csv", col_names = c("id", "X"), skip = 1) %>% select(X)
+test.neg <- read_csv("data/test_neg.csv", col_names = c("id", "X"), skip = 1) %>% select(X)
+test.pos <- read_csv("data/test_pos.csv", col_names = c("id", "X"), skip = 1) %>% select(X)
+train.y <- read_csv("data/train_y.csv", col_names = c("id", "y"), skip = 1) %>% select(y)
+test.y <- read_csv("data/test_y.csv", col_names = c("id", "y"), skip = 1) %>% select(y)
+```
+
+Se crea el conjunto de datos de entrenamiento y prueba.
+
+```{r}
+train.df <- train.pos %>% rbind(train.neg)
+test.df <- test.pos %>% rbind(test.neg)
+
+rm(train.pos, train.neg, test.pos, test.neg)
+```
+
+Longitud de los conjuntos de entrenamiento y prueba
+
+```{r}
+paste("Conjunto de entrenamiento:", length(train.df$X))
+paste("Conjunto de prueba:", length(test.df$X))
+```
+
+```{r}
+`%notin%` = function(x,y) !(x %in% y)
+```
+
+## Preparación de datos
+
+### Stopwords
+
+Se descarga el conjunto de stopwords, las opciones disponibles son `snowball`, `nltk` y `stopwords-iso`. Para este ejercicio se eligió `nltk`.
+
+```{r}
+library(stopwords)
+language <- "en"
+stopwords <- stopwords(language, source = "nltk")
+length(stopwords)
+```
+
+Stemming words
+
+```{r}
+library(corpus)
+text <- "comuniti communiti love loving lovingly loved lover lovely love"
+text_tokens(text, stemmer = language) # english stemmer
+```
+
+### Emoticones
+```{r}
+emoticons <- read_excel("data/emoticons.xlsx") %>%
+  pivot_longer(e1:e11) %>%
+  filter(!is.na(value)) %>%
+  select(emoticon = value) %>%
+  t() %>%
+  as.vector()
+
+emoticons <-str_replace_all(emoticons,"‑", "-")
+```
+
+
+### Procesamiento de tweets
+```{r}
+library(textclean)
+process_tweet <- function(tweet){
+  tweet <- tolower(tweet) # Texto a minúsculas
+  tweet <- str_replace_all(tweet,"\\$\\w*", "") # Elimina stock market tickers like $GE
+  tweet <-str_replace_all(tweet,"‑", "-")
+  tweet <- str_replace_all(tweet,"^RT[\\S]+", "") # Elimina RT
+  tweet <- str_replace_all(tweet,"http[\\S]*", "") # Elimina hipervículos
+  tweet <- str_replace_all(tweet,"@[\\S]*", "") # Elimina @
+  tweet <- str_replace_all(tweet,"#", "") # Elimina #
+  #tweet <- str_replace_all(tweet,"[[:punct:]]", " ") # Elimina signos de puntuación
+  #tweet <- str_replace_all(tweet,"[[:digit:]]", " ") # Elimina números
+  tweet <- str_replace_all(tweet,"[\\s]+", " ") # Elimina espacios en blanco múltiples
+  tweet <- str_replace_all(tweet,"^[\\s]+", "")  
+  tweet <- str_replace_all(tweet,"[\\s]+^", "")  
+  tweet <- str_split(tweet, " ")[[1]] # Tokenización
+  tweet <- tweet[tweet %notin% stopwords] # Eliminación de stopwotds
+  #stemmer_tweet <- text_tokens(tweet, stemmer = language)
+  
+  for(i in 1:length(tweet)){
+    if(tweet[i] %notin% emoticons){
+      if(length(tweet[i])>0){
+        tweet[i] <- str_replace_all(tweet[i],"[[:punct:]]", "")
+      }else{tweet = "UNK"}
+    }else(tweet[i] = tweet[i])
+  }
+
+  tweet <- tweet[tweet != ""] 
+  
+  if(length(tweet) == 0) {tweet = "UNK"}
+
+  for(i in 1:length(tweet)){
+    if(tweet[i] %notin% emoticons){
+      if(length(text_tokens(tweet[i], stemmer = language)[[1]])>0){
+        tweet[i] <- text_tokens(tweet[i], stemmer = language)[[1]]
+      }else{tweet = "UNK"}
+    }else{tweet[i] = tweet[i]}
+  }
+  
+  tweet <- tweet[str_length(tweet)>1] # Eliminación de palabras de longitut < 2
+  
+  return(tweet)
+}
+```
+
+Prueba la función process_tweet
+
+```{r}
+tweet.test <- "#FollowFriday @France_Inte @PKuchly57 @Milipol_Paris for being top engaged members in my community this week :)"
+process_tweet(tweet.test)
+
+#text_tokens("community", stemmer = language)[[1]]
+```
+
+```{r}
+#tweet.test <- test.df$X[2]
+#tweet.test <- train.df$X[4865]
+print("Tweet original:") 
+tweet.test
+
+print("Tweet procesado:")
+process_tweet(tweet.test)
+```
+
+### Construcción de diccionario y frecuencias
+
+```{r}
+build_freqs <- function(X, y){
+  X <- X %>% as.vector() %>% t()
+  y <- y %>% as.vector() %>% t()
+  parsed_text <- X %>% 
+    lapply(process_tweet)
+  
+  words <- unlist(parsed_text)
+  
+  ys <- c()
+  
+  for(i in 1:length(parsed_text)){
+    n <- length(parsed_text[[i]])
+    ys <-c(ys, rep(y[i], n))
+  }
+  
+  dictionary <- data.frame(words, ys) %>%
+    group_by(words) %>%
+    summarise(n = n(),
+              pos = sum(ys),
+              neg = n - pos) %>%
+    arrange(desc(n))
+  
+  return(dictionary)
+}
+```
+
+Se crea el diccionario con el conjunto de datos de entrenamiento. 
+
+```{r, eval = FALSE}
+freqs <- build_freqs(train.df, train.y)
+freqs %>% write.csv("data/freqs.csv")
+```
+
+```{r}
+freqs <- read.csv("data/freqs.csv")
+```
+
+# Regresión logística
+
+### Logistic regression: regression and a sigmoid
+
+```{r}
+sigmoid <- function(z){h = 1/ (1 + exp(-z))}
+```
+
+
+```{r}
+-1 * sum(0 * log(0.9999) + (1-0) * log(1-0.9999))
+```
+
+```{r}
+-1 * sum(1 * log(0.0001) + (1-1) * log(1-0.0001))
+```
+
+```{r}
+loss <- function(y_hat, y){
+  loss <- -1 * (y * log(y_hat) + (1-y) * log(1-y_hat))
+  return(loss)
+}
+```
+
+```{r}
+x <- seq(0.0001, 0.9999, length=100)
+
+plot(x, loss(x, 1), type="l", col="darkgreen", lwd=2, main="Función LOSS", 
+     las=1, xlab = "y estimado", ylab = "Loss")
+lines(x, loss(x, 0),col="darkred", lwd=2)
+
+legend("top",col=c("darkgreen","darkred"),
+       legend =c("y = 1","y = 0"), lwd=2, bty = "n")
+```
+
+#### Descenso de gradiente
+
+```{r}
+gradientDescent <- function(x, y, theta, alpha, num_iters){
+  m = nrow(x)
+  #y = y %>% t() %>% as.vector()
+  for (i in 1:num_iters){
+    z = x %*% theta
+    h = sigmoid(z)
+    J = -(1/m) * (t(y) %*% log(h) + (1-t(y)) %*% log(1-h))
+    theta = theta - (1 * alpha/m) * (t(x) %*% (h-y))
+  }
+  return(list(J, theta))
+}
+```
+
+```{r}
+tmp_X = matrix(
+  c(1, 8.34044009e+02, 1.44064899e+03,
+    1, 2.28749635e-01, 6.04665145e+02,
+    1, 2.93511782e+02, 1.84677190e+02,
+    1, 3.72520423e+02, 6.91121454e+02,
+    1, 7.93534948e+02, 1.07763347e+03,
+    1, 8.38389029e+02, 1.37043900e+03,
+    1, 4.08904499e+02, 1.75623487e+03,
+    1, 5.47751864e+01, 1.34093502e+03,
+    1, 8.34609605e+02, 1.11737966e+03,
+    1, 2.80773877e+02, 3.96202978e+02),
+  nrow = 10, byrow = TRUE)
+
+tmp_Y = c(1, 1, 0, 1, 1, 1, 0, 0, 0, 1)
+
+gradientDescent(tmp_X, tmp_Y, rep(0, 3), 1e-8, 700)
+```
+
+# Part 2: Extracting the features
+
+Función Extract Features
+```{r}
+extract_features <- function(tweet, dict){
+  word_l = process_tweet(tweet)
+  x <- rep(1, 3)
+  
+  temp <- dict %>%
+    filter(words %in% word_l) %>%
+    select(pos, neg)
+  
+  x[2] <- temp$pos %>% sum()
+  x[3] <- temp$neg %>% sum()
+  return(x)
+}
+```
+
+```{r}
+tweet.test <- "#FollowFriday @France_Inte @PKuchly57 @Milipol_Paris for being top engaged members in my community this week :)"
+extract_features(tweet.test, freqs)
+```
+
+```{r}
+freqs %>%
+  filter(words %in% process_tweet(tweet.test))
+```
+
+check for when the words are not in the freqs dictionary
+
+```{r}
+extract_features('blorb bleeeeb bloooob', freqs)
+```
+
+# Part 3: Training Your Model
+
+```{r}
+# collect the features 'x' and stack them into a matrix 'X'
+X <- rep(0, 3*nrow(train.df)) %>%
+  matrix(nrow = nrow(train.df))
+colnames(X) <- c("bias", "pos", "neg")
+
+for (i in 1:nrow(train.df)){
+  X[i, ]= extract_features(train.df[i, ], freqs)
+}
+    
+# training labels corresponding to X
+y = train.y %>% t() %>% as.vector()
+```
+
+
+```{r}
+# Apply gradient descent
+#gradientDescent
+temp <- gradientDescent(X, y, rep(0, 3), 
+                alpha = 1e-9, num_iters = 1500)
+
+J <- temp[[1]]
+theta <- temp[[2]] %>%
+  as.vector()
+```
+
+# Part 4: Test your logistic regression
+
+```{r}
+predict_tweet <- function(tweet, dict, theta){
+    x = extract_features(tweet, dict)
+    y_pred = sigmoid(x %*% theta)
+    return (y_pred)
+}
+```
+
+
+```{r}
+# Run this cell to test your function
+tweets.test <- c("I am happy", "I am bad", "this movie should have been great.", "great", "great great", "great great great", "great great great great")
+
+for(i in 1:length(tweets.test)){
+  paste(tweets.test[i], 
+        "-->", 
+        predict_tweet(tweets.test[i], freqs, theta)) %>%
+    print()
+}
+```
+```{r}
+tweet <- "I am learning :)"
+
+paste("Tweet: ", 
+      tweet, 
+      ". Predict: ", 
+      predict_tweet(tweet, freqs, stopwords, theta),
+      sep = "") %>%
+  print()
+```
+
+
+```{r}
+test_logistic_regression <- function(test_x, test_y, dict, theta){
+  test_x <- test_x %>% as.vector() %>% t()
+  y_hat = rep(0, length(test_y))
+  i <- 2
+  for (i in 1:length(test_x)){
+      y_pred = predict_tweet(test_x[i], dict, theta)
+      
+      if (y_pred > 0.5) y_hat[i] <- 1
+  }
+
+  accuracy = mean(y_hat == test_y)
+  return (accuracy)
+}
+
+test.y <- test.y %>% t() %>% as.vector()
+tmp_accuracy <- test_logistic_regression(test.df, test.y, freqs, theta)
+tmp_accuracy
+```
+
+Part 5: Error Analysis
+
+```{r}
+# Some error analysis done for you
+print('Label Predicted Tweet')
+
+test.x <- test.df %>% as.vector() %>% t()
+  
+for(i in 1:length(test.x)){
+  for(i in 1:length(test.y)){
+    y_hat = predict_tweet(test_x, freqs, theta)
+    if (abs(y - (y_hat > 0.5)) > 0){
+      print('THE TWEET IS:', x)
+      print('THE PROCESSED TWEET IS:', process_tweet(x))
+      #print('%d\t%0.8f\t%s' % (y, y_hat,)
+    }
+  }
+}
+```
+
+
+
+Text mining
+https://www.cienciadedatos.net/documentos/38_text_minig_con_r_ejemplo_practico_twitter
+
+Regresión Lineal
+https://rpubs.com/Joaquin_AR/229736#
+
+Expresiones regulares
+https://rpubs.com/ydmarinb/429756#
+
+Stopwords
+https://www.rdocumentation.org/packages/stopwords/versions/2.2
+
+Replace emoticons
+
+https://rdrr.io/cran/textclean/man/replace_emoticon.html
+
+Stemming words
+https://cran.r-project.org/web/packages/corpus/vignettes/stemmer.html
+
+https://www.rdocumentation.org/packages/quanteda/versions/1.3.0/topics/tokens
+
+
+emoticones
+
+https://en.wikipedia.org/wiki/List_of_emoticons
+
+Crear un diccionario
+https://rpubs.com/MaVa/362475
+
+Sentimientos
+https://programminghistorian.org/es/lecciones/analisis-de-sentimientos-r
