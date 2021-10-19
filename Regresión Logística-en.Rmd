@@ -2,7 +2,10 @@
 title: "PLN Regresión Logística"
 author: "Arling"
 date: "10/7/2021"
-output: html_document
+output: 
+  html_document:
+    toc: true
+    theme: united
 ---
 
 ```{r setup, include=FALSE}
@@ -14,11 +17,16 @@ library(readxl)
 library(tidyr)
 library(stringr)
 rm(list = ls())
-
-`%notin%` = function(x,y) !(x %in% y)
 ```
 
-## Lectura de datos y funciones
+
+# Preparación de datos
+
+Lectura de datos
+
+```{r}
+`%notin%` = function(x,y) !(x %in% y)
+```
 
 ```{r}
 train.neg <- read_csv("data/train_neg.csv", col_names = c("id", "X"), skip = 1) %>% select(X)
@@ -38,25 +46,19 @@ test.df <- test.pos %>% rbind(test.neg)
 rm(train.pos, train.neg, test.pos, test.neg)
 ```
 
-Longitud de los conjuntos de entrenamiento y prueba
+Longitud de los conjuntos de entrenamiento y prueba:
 
 ```{r}
-paste("Conjunto de entrenamiento:", length(train.df$X))
-paste("Conjunto de prueba:", length(test.df$X))
-```
-
-## Preparación de datos
-
-Selección de idioma para stopwords y stemming.
-
-```{r}
-language <- "en"
+length(train.df$X)
+length(test.df$X)
 ```
 
 Se descarga el conjunto de stopwords, las opciones disponibles son `snowball`, `nltk` y `stopwords-iso`. Para este ejercicio se eligió `nltk`.
 
 ```{r}
 library(stopwords)
+# Selección de idioma para stopwords y stemming.
+language <- "en"
 stopwords <- stopwords(language, source = "nltk")
 length(stopwords)
 ```
@@ -66,7 +68,7 @@ Para realizar el stemming se utilizó la función `text_tokens`.
 ```{r}
 library(corpus)
 text <- "comuniti communiti love loving lovingly loved lover lovely love"
-text_tokens(text, stemmer = language)
+text_tokens(text, stemmer = language)[[1]]
 ```
 
 Un inconveniente del stemming de `R` ante `python` es que la función `text_tokens` no reconoce emoticones y los separa caracter por caracter. Por ejemplo:
@@ -87,14 +89,14 @@ emoticons <- read_excel("data/emoticons.xlsx") %>%
   as.vector()
 
 emoticons <-str_replace_all(emoticons,"‑", "-")
+head(emoticons)
 ```
 
-
-### Procesamiento de tweets
+## Procesamiento de tweets
 
 En el proyecto original, la limpieza y tokenización se hacen en una función. Aquí, por el contrario, se realiza en dos partes.
 
-#### Limpieza de tweets.
+### Limpieza de tweets.
 
 ```{r}
 library(textclean)
@@ -103,7 +105,7 @@ clean_tweet <- function(tweet){
   tweet <- tolower(tweet) 
   # Elimina stock market tickers like $GE
   tweet <- str_replace_all(tweet,"\\$\\w*", "")  
-  # Estos guiones parecen iguales, pero no lo son
+  # Guiones
   tweet <-str_replace_all(tweet,"‑", "-")
   # Elimina RT
   tweet <- str_replace_all(tweet,"^RT[\\S]+", "") 
@@ -114,10 +116,10 @@ clean_tweet <- function(tweet){
   # Elimina Hashtag
   tweet <- str_replace_all(tweet,"#", "") 
   # Elimina signos de puntuación
-  # Descartado para este ejercicio porque elimina emoticones
+  # Descartado. Elimina emoticones.
   #tweet <- str_replace_all(tweet,"[[:punct:]]", " ") 
   # Elimina números
-  #tweet <- str_replace_all(tweet,"[[:digit:]]", " ") 
+  #weet <- str_replace_all(tweet,"[[:digit:]]", " ") 
   # Elimina espacios en blanco múltiples
   tweet <- str_replace_all(tweet,"[\\s]+", " ") 
   tweet <- str_replace_all(tweet,"^[\\s]+", "")  
@@ -131,10 +133,11 @@ Se prueba la función:
 ```{r}
 tweet.test <- "#FollowFriday @France_Inte @PKuchly57 @Milipol_Paris for being top engaged members in my community this week :)"
 
-tweet.test %>% clean_tweet()
+tweet.test %>% 
+  clean_tweet()
 ```
 
-La tokenización se realiza en pasos:
+La tokenización se realiza en los siguientes pasos:
 
 1. Tokenización
 2. Eliminación de stopwords
@@ -148,7 +151,6 @@ tokenize_tweet <- function(tweet){
   tweet <- str_split(tweet, " ")[[1]] 
   # Paso 2.
   tweet <- tweet[tweet %notin% stopwords] 
-
   # Paso 3.  
   for(i in 1:length(tweet)){
     if(tweet[i] %notin% emoticons){
@@ -183,6 +185,7 @@ tweet.test <- "#FollowFriday @France_Inte @PKuchly57 @Milipol_Paris for being to
 
 tweet.test %>% tokenize_tweet()
 ```
+
 Finalmente, se unen los dos procesos en una función.
 
 ```{r}
@@ -201,17 +204,7 @@ tweet.test <- "#FollowFriday @France_Inte @PKuchly57 @Milipol_Paris for being to
 tweet.test %>% process_tweet()
 ```
 
-```{r}
-#tweet.test <- test.df$X[2]
-#tweet.test <- train.df$X[4865]
-print("Tweet original:") 
-tweet.test
-
-print("Tweet procesado:")
-process_tweet(tweet.test)
-```
-
-#### Construcción de diccionario y frecuencias
+### Construcción de diccionario y frecuencias
 
 El procedimiento para crear un diccionario consite en aplicar la función `process_tweet` a un conjunto de tweets, crear una lista única de palabras y calcular la frecuencia con la que se clasifican en negativos y positivos.
 
@@ -264,19 +257,20 @@ freqs <- read.csv("data/freqs.csv")
 sigmoid <- function(z){h = 1/ (1 + exp(-z))}
 ```
 
-Cuando el modelo predice de manera incorrecta el valor de la función `loss` es cercano a `9.2`.
-
-Por ejemplo, si predice cercano a `1` y el valor real es 0:
-
 ```{r}
--1 * sum(0 * log(0.9999) + (1-0) * log(1-0.9999))
+library(ggplot2)
+library(ggridges)
+
+base <- ggplot() + xlim(-8, 8)
+base + geom_function(fun = sigmoid) + 
+  #facet_wrap(vars(genus)) + 
+  labs(#title = "Observed genera through time",
+       x = "z",
+       y = "h(z) = 1/(1+exp(-z))") +
+  theme_bw()
 ```
 
-O bien, cuando predice cercano a cero y el valor real es 1:
-
-```{r}
--1 * sum(1 * log(0.0001) + (1-1) * log(1-0.0001))
-```
+Cuando el modelo predice de manera incorrecta el valor de la función `loss` es cercano a `9.2`. Es decir, si predice cercano a `1` y el valor real es `0`. O bien, cuando predice cercano a cero y el valor real es 1:
 
 #### Función `loss`
 
@@ -291,14 +285,25 @@ Gráfica de la función `loss` para $x \in (0, 1)$:
 
 ```{r}
 x <- seq(0.0001, 0.9999, length=100)
+`y_1` <- loss(x, 1)
+`y_0` <- loss(x, 0)
 
-plot(x, loss(x, 1), type="l", col="darkgreen", lwd=2, main="Función LOSS", 
-     las=1, xlab = "y estimado", ylab = "Loss")
-lines(x, loss(x, 0),col="darkred", lwd=2)
-
-legend("top",col=c("darkgreen","darkred"),
-       legend =c("y = 1","y = 0"), lwd=2, bty = "n")
+data <- data.frame(x, `y_0`, `y_1`) %>%
+  gather("y_real", "y_est", -x) 
 ```
+
+```{r}
+base <- ggplot() + xlim(-0, 1)
+ggplot(data,
+       mapping = aes(x = x, y = y_est, color = y_real)) +
+  geom_line() +
+  theme_bw() + 
+  labs(title = "",
+       x = "z",
+       y = "h(z) = 1/(1+exp(-z))") +
+  theme_bw()
+```
+
 
 #### Descenso de gradiente
 
@@ -333,19 +338,25 @@ tmp_X = matrix(
   nrow = 10, byrow = TRUE)
 
 tmp_Y = c(1, 1, 0, 1, 1, 1, 0, 0, 0, 1)
+```
 
-paste("Costo después del entrenamiento:",
-      gradientDescent(tmp_X, tmp_Y, rep(0, 3), 1e-8, 700)[[1]]) %>%
+Costo después del entrenamiento
+
+```{r}
+gradientDescent(tmp_X, tmp_Y, rep(0, 3), 1e-8, 700)[[1]] %>%
   print()
+```
 
-print("Vector de pesos:")
+Vector de pesos
+
+```{r}
 as.vector(gradientDescent(tmp_X, tmp_Y, rep(0, 3), 1e-8, 700)[[2]]) %>%
   print()
 ```
 
 # Part 2: Extracting the features
 
-#### Función Extract Features
+## Extract Features
 
 ```{r}
 extract_features <- function(tweet, dict){
@@ -403,7 +414,6 @@ Se aplica la función gradiente:
 
 ```{r}
 # Apply gradient descent
-#gradientDescent
 temp <- gradientDescent(X, y, rep(0, 3), 
                 alpha = 1e-9, num_iters = 1500)
 
@@ -422,7 +432,6 @@ predict_tweet <- function(tweet, dict, theta){
 }
 ```
 
-
 ```{r}
 # Run this cell to test your function
 tweets.test <- c("I am happy", "I am bad", "this movie should have been great.", "great", "great great", "great great great", "great great great great")
@@ -434,17 +443,6 @@ for(i in 1:length(tweets.test)){
     print()
 }
 ```
-```{r}
-tweet <- "I am learning :)"
-
-paste("Tweet: ", 
-      tweet, 
-      ". Predict: ", 
-      predict_tweet(tweet, freqs, theta),
-      sep = "") %>%
-  print()
-```
-
 
 ```{r}
 test_logistic_regression <- function(test_x, test_y, dict, theta){
@@ -466,9 +464,9 @@ tmp_accuracy <- test_logistic_regression(test.df, test.y, freqs, theta)
 tmp_accuracy
 ```
 
-Part 5: Error Analysis
+# Part 5: Error Analysis
 
-```{r}
+```{r, eval = FALSE}
 # Some error analysis done for you
 print('Label Predicted Tweet')
 
@@ -476,7 +474,7 @@ test.x <- test.df %>% as.vector() %>% t()
   
 for(i in 1:length(test.x)){
   for(i in 1:length(test.y)){
-    y_hat = predict_tweet(test_x, freqs, theta)
+    y_hat = predict_tweet(test.x, freqs, theta)
     if (abs(y - (y_hat > 0.5)) > 0){
       print('THE TWEET IS:', x)
       print('THE PROCESSED TWEET IS:', process_tweet(x))
@@ -487,35 +485,42 @@ for(i in 1:length(test.x)){
 ```
 
 
+Referencias:
 
-Text mining
+- Text mining
+
 https://www.cienciadedatos.net/documentos/38_text_minig_con_r_ejemplo_practico_twitter
 
-Regresión Lineal
+- Regresión Lineal
+
 https://rpubs.com/Joaquin_AR/229736#
 
 Expresiones regulares
-https://rpubs.com/ydmarinb/429756#
+
+- https://rpubs.com/ydmarinb/429756#
 
 Stopwords
-https://www.rdocumentation.org/packages/stopwords/versions/2.2
+
+- https://www.rdocumentation.org/packages/stopwords/versions/2.2
 
 Replace emoticons
 
-https://rdrr.io/cran/textclean/man/replace_emoticon.html
+- https://rdrr.io/cran/textclean/man/replace_emoticon.html
 
 Stemming words
-https://cran.r-project.org/web/packages/corpus/vignettes/stemmer.html
 
-https://www.rdocumentation.org/packages/quanteda/versions/1.3.0/topics/tokens
+- https://cran.r-project.org/web/packages/corpus/vignettes/stemmer.html
 
+- https://www.rdocumentation.org/packages/quanteda/versions/1.3.0/topics/tokens
 
-emoticones
+- Emoticones
 
 https://en.wikipedia.org/wiki/List_of_emoticons
 
-Crear un diccionario
+- Crear un diccionario
+
 https://rpubs.com/MaVa/362475
 
-Sentimientos
+- Sentimientos
+
 https://programminghistorian.org/es/lecciones/analisis-de-sentimientos-r
